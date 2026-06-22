@@ -1,0 +1,32 @@
+# Next Module: Real-Time Push Notification Engine
+
+For the next automated module, I propose we build the **Real-Time Push Notification Engine**. 
+
+Currently, notifications only exist as text records in the database. To create a true production-ready mobile app, we need to leverage native device capabilities to alert members when their membership is about to expire, or when a payment is successfully processed, even if the app is closed.
+
+> [!IMPORTANT]
+> **User Review Required**: Please review this automated module proposal. Once approved, I will implement the native notification infrastructure across both the mobile app and the backend.
+
+---
+
+## 1. Mobile Integration (`expo-notifications`)
+
+I will install and configure `expo-notifications` in the React Native application.
+*   **Permission Handling**: Upon login, the app will request native Notification permissions (for iOS and Android).
+*   **Device Tokens**: The app will generate a unique `ExpoPushToken` for the physical device and securely transmit it to the backend `Auth` or `User` service to tie the physical device to the user's account.
+*   **Foreground/Background Handlers**: The app will be configured to handle incoming notifications gracefully, displaying native banners even when the user is actively using the app.
+
+## 2. Backend Dispatcher (`expo-server-sdk`)
+
+I will upgrade the NestJS `NotificationsModule` to act as a true push dispatcher.
+*   **SDK Integration**: Install the `expo-server-sdk` Node library.
+*   **Event-Driven Dispatch**: When a user's payment is completed or a membership is renewed, the backend will fetch their stored `ExpoPushToken` and fire a real payload to Apple's APNs and Google's FCM via Expo's push servers.
+
+## 3. Database Updates
+
+*   **Token Storage**: I will add a `pushToken` field to the `User` or `MemberProfile` model in the Prisma schema to store the device routing information.
+
+## Open Questions
+1.  **Module Approval**: Do you approve of building the Real-Time Push Notification Engine next?
+
+Please review and approve so I can begin execution!

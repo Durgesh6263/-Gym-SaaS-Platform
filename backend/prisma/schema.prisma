@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  GYM_OWNER
+  ADMIN
+  STAFF
+  MEMBER
+}
+
+enum StaffPermission {
+  ADD_MEMBERS
+  RENEW_MEMBERSHIP
+  MANAGE_PAYMENTS
+  ATTENDANCE_ACCESS
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum PlanType {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+}
+
+model Gym {
+  id              String   @id @default(uuid())
+  name            String
+  subdomain       String?  @unique
+  address         String?
+  contactEmail    String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users           User[]
+  plans           MembershipPlan[]
+  renewals        MembershipRenewal[]
+  payments        Payment[]
+  attendances     Attendance[]
+  notifications   Notification[]
+  subscription    GymSubscription?
+}
+
+model User {
+  id            String    @id @default(uuid())
+  gymId         String?   // null if SUPER_ADMIN
+  gym           Gym?      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  phoneNumber   String?
+  role          Role      @default(MEMBER)
+  isActive      Boolean   @default(true)
+  pushToken     String?   // For mobile push notifications
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // 1-to-1 Profile Relations
+  adminProfile  AdminProfile?
+  staffProfile  StaffProfile?
+  memberProfile MemberProfile?
+
+  // 1-to-Many Relations
+  payments      Payment[]
+  notifications Notification[]
+  processedRenewals MembershipRenewal[] @relation("ProcessedRenewals")
+
+  @@index([email])
+}
+
+model AdminProfile {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department String?
+}
+
+model StaffProfile {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position   String
+  shift      String?
+  permissions StaffPermission[]
+}
+
+model MemberProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  gender           Gender?
+  dateOfBirth      DateTime?
+  address          String?
+  photoUrl         String?
+  height           Decimal? @db.Decimal(5, 2)
+  weight           Decimal? @db.Decimal(5, 2)
+  fitnessGoal      String?
+  qrCodeData       String   @unique @default(uuid())
+  
+  joinDate         DateTime @default(now())
+  emergencyContact String?
+  medicalNotes     String?
+
+  // Relations
+  renewals         MembershipRenewal[]
+  attendances      Attendance[]
+}
+
+model MembershipPlan {
+  id           String   @id @default(uuid())
+  gymId        String
+  gym          Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  price        Decimal  @db.Decimal(10, 2)
+  type         PlanType @default(MONTHLY)
+  discount     Decimal? @db.Decimal(5, 2)
+  durationDays Int
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  renewals     MembershipRenewal[]
+}
+
+enum RenewalStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model MembershipRenewal {
+  id          String         @id @default(uuid())
+  gymId       String
+  gym         Gym            @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  memberId    String
+  member      MemberProfile  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  planId      String
+  plan        MembershipPlan @relation(fields: [planId], references: [id])
+  
+  startDate   DateTime
+  endDate     DateTime
+  status      RenewalStatus  @default(ACTIVE)
+
+  // Link to payment
+  paymentId   String?        @unique
+  payment     Payment?       @relation(fields: [paymentId], references: [id])
+  
+  processedById   String?
+  processedBy     User?    @relation("ProcessedRenewals", fields: [processedById], references: [id])
+
+  createdAt   DateTime       @default(now())
+
+  @@index([memberId])
+  @@index([status])
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  CASH
+  BANK_TRANSFER
+  UPI
+}
+
+enum NotificationChannel {
+  PUSH
+  SMS
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Payment {
+  id            String         @id @default(uuid())
+  gymId         String
+  gym           Gym            @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id])
+  amount        Decimal        @db.Decimal(10, 2)
+  paymentDate   DateTime       @default(now())
+  method        PaymentMethod
+  status        PaymentStatus  @default(COMPLETED)
+  referenceId   String?        // For external gateway IDs
+
+  // Relation
+  renewal       MembershipRenewal?
+
+  createdAt     DateTime       @default(now())
+
+  @@index([userId])
+}
+
+model Attendance {
+  id           String        @id @default(uuid())
+  gymId        String
+  gym          Gym           @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  memberId     String
+  member       MemberProfile @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  checkInTime  DateTime      @default(now())
+  checkOutTime DateTime?
+  
+  @@index([memberId])
+  @@index([checkInTime])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  gymId     String
+  gym       Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  
+  channel   NotificationChannel @default(PUSH)
+  status    NotificationStatus  @default(PENDING)
+  errorLog  String?
+
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+// ==========================================
+// SAAS PLATFORM BILLING MODELS
+// ==========================================
+
+model SaasPlan {
+  id           String   @id @default(uuid())
+  name         String   // e.g. "Basic", "Pro", "Enterprise"
+  price        Decimal  @db.Decimal(10, 2)
+  maxMembers   Int      // limit members per gym
+  features     String[] 
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions GymSubscription[]
+}
+
+enum GymSubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+model GymSubscription {
+  id          String   @id @default(uuid())
+  gymId       String   @unique
+  gym         Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  saasPlanId  String
+  saasPlan    SaasPlan @relation(fields: [saasPlanId], references: [id])
+  
+  status      GymSubscriptionStatus @default(TRIAL)
+  startDate   DateTime @default(now())
+  endDate     DateTime? // null if strictly monthly auto-renew
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
